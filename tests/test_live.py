@@ -41,6 +41,7 @@ from zipline.gens.sim_engine import MinuteSimulationClock
 from zipline.gens.brokers.broker import Broker
 from zipline.gens.brokers.ib_broker import IBBroker, TWSConnection
 from zipline.gens.brokers.alpaca_broker import ALPACABroker
+from zipline.gens.brokers.binance_broker import BinanceBroker, BinanceConnection
 from zipline.testing.fixtures import WithSimParams
 from zipline.finance.execution import (StopLimitOrder,
                                        MarketOrder,
@@ -1258,6 +1259,47 @@ class TestALPACABroker(WithSimParams, ZiplineTestCase):
         assert broker.subscribed_assets() == []
         assert broker.time_skew == pd.Timedelta('0sec')
 
+
+class TestBinanceExchange(WithSimParams, ZiplineTestCase):
+    ASSET_FINDER_EQUITY_SIDS = (1, 2)
+    ASSET_FINDER_EQUITY_SYMBOLS = ("ETH", "LTC")
+
+    '''
+    @patch('zipline.gens.brokers.binance_broker.Client')
+    def test_get_realtime_bars(self, tradeapi):
+        pass
+
+    @patch('zipline.gens.brokers.binance_broker.Client')
+    def test_get_spot_value(self, tradeapi):
+        pass
+
+    @patch('zipline.gens.brokers.binance_broker.Client')
+    def test_is_alive(self, tradeapi):
+        pass
+
+    @patch('zipline.gens.brokers.alpaca_broker.symbol_lookup')
+    @patch('zipline.gens.brokers.binance_broker.Client')
+    def test_order(self, tradeapi, symbol_lookup):
+        pass
+
+    @patch('zipline.gens.brokers.alpaca_broker.symbol_lookup')
+    @patch('zipline.gens.brokers.binance_broker.Client')
+    def test_orders(self, tradeapi, symbol_lookup):
+        pass
+
+    @patch('zipline.gens.brokers.alpaca_broker.symbol_lookup')
+    @patch('zipline.gens.brokers.binance_broker.Client')
+    def test_portfolio(self, tradeapi, symbol_lookup):
+        pass
+
+    @patch('zipline.gens.brokers.binance_broker.Client')
+    def test_last_trade_dt(self, tradeapi):
+        pass
+
+    @patch('zipline.gens.brokers.binance_broker.Client')
+    def test_misc(self, tradeapi):
+        pass
+    '''
 
 class TestBlotterLive(WithTradingEnvironment, ZiplineTestCase):
     ASSET_FINDER_EQUITY_SIDS = (1, 2)

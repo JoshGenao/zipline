@@ -31,10 +31,10 @@ class BinanceConnection():
         self._port = "9443"
         self.managed_accounts = None
         self.sockets = {}
+        self.bars = {}
         self.time_skew = None
         self.bm = BinanceSocketManager(self.client)     # Creates the websocket manager
         self.connect()
-        pass
 
     def connect(self):
         log.info("Connecting: {}:{}".format(self._host, self._port))
@@ -57,6 +57,36 @@ class BinanceConnection():
             # msg['B']
         elif msg['e'] == "executionReport":
             log.info("Received Execution Report")
+        elif msg['e'] == "kline":
+            asset = msg['s']
+            log.info("Received {} Kline".format(asset))
+            kline_data = msg['k']
+            open = kline_data['o']
+            high = kline_data['h']
+            low = kline_data['l']
+            close = kline_data['c']
+            volume = kline_data['v']
+            self._process_tick(asset, open, high, low, close, volume)
+
+    def _add_bar(self, symbol, last_trade_price, last_trade_size,
+                 last_trade_time, total_volume, vwap, single_trade_flag):
+        bar = pd.DataFrame(index=pd.DatetimeIndex([last_trade_time]),
+                           data={'last_trade_price': last_trade_price,
+                                 'last_trade_size': last_trade_size,
+                                 'total_volume': total_volume,
+                                 'vwap': vwap,
+                                 'single_trade_flag': single_trade_flag})
+
+        if symbol not in self.bars:
+            self.bars[symbol] = bar
+        else:
+            self.bars[symbol] = self.bars[symbol].append(bar)
+
+    def _process_tick(self, asset, o, h, l, c, v):
+        pass
+
+    def subscribe_to_asset(self, asset, interval=Client.KLINE_INTERVAL_1MINUTE):
+        self.bm.start_kline_socket(asset, self._queue_msg, interval)   # Need to create a callback function
 
     def _download_account_details(self):
         pass
@@ -95,15 +125,17 @@ class BinanceBroker(Broker):
         self._api = Client(binance_api_key, binance_api_secret)
         self.binance_socket = BinanceConnection(self._api)
         self.fiat_currency = "USD"
-        pass
 
-    def subscribe_to_market_data(self, asset):
-        ''' Do nothing '''
-        pass
+        self._subscribed_assets = []
+        super(self.__class__, self).__init__()
+
+    def subscribe_to_market_data(self, asset, interval='1m'):
+        if asset not in self._subscribed_assets:
+            self.binance_socket.subscribe_to_market_data(str(asset.symbol), interval)
+            self._subscribed_assets.append(asset)
 
     def subscribed_assets(self):
-        ''' Do nothing '''
-        return []
+        return self._subscribed_assets
 
     @property
     def positions(self):
@@ -208,4 +240,11 @@ class BinanceBroker(Broker):
         pass
 
     def get_realtime_bars(self, assets, data_frequency):
-        pass
+        df = pd.DataFrame()
+
+        for asset in assets:
+            symbol = str(asset.symbol)
+
+            # Subscribe to market data
+
+        self.binance_socket.subscribe_to_market_data(assets)
