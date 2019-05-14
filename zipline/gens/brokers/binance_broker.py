@@ -57,16 +57,6 @@ class BinanceConnection():
             # msg['B']
         elif msg['e'] == "executionReport":
             log.info("Received Execution Report")
-        elif msg['e'] == "kline":
-            asset = msg['s']
-            log.info("Received {} Kline".format(asset))
-            kline_data = msg['k']
-            open = kline_data['o']
-            high = kline_data['h']
-            low = kline_data['l']
-            close = kline_data['c']
-            volume = kline_data['v']
-            self._process_tick(asset, open, high, low, close, volume)
 
     def _add_bar(self, symbol, last_trade_price, last_trade_size,
                  last_trade_time, total_volume, vwap, single_trade_flag):
@@ -82,11 +72,33 @@ class BinanceConnection():
         else:
             self.bars[symbol] = self.bars[symbol].append(bar)
 
-    def _process_tick(self, asset, o, h, l, c, v):
-        pass
+    def realtimeData(self, msg):
+        '''
+
+        :param msg:
+        :return:
+        '''
+        if msg['e'] == "error":
+            log.error("Websocket Received an Error")
+            self.bm.close()
+            self.connect()
+
+        elif msg['e'] == "kline":
+            asset = msg['s']
+            log.info("Received {} Kline".format(asset))
+            kline_data = msg['k']
+            open = kline_data['o']
+            high = kline_data['h']
+            low = kline_data['l']
+            close = kline_data['c']
+            volume = kline_data['v']
+            self._process_tick(asset, open, high, low, close, volume)
+
+    def _process_tick(self, asset, open, high, low, close, volume):
+        log.info("{} {} {} {} {} {}", asset, open, high, low, close, volume)
 
     def subscribe_to_asset(self, asset, interval=Client.KLINE_INTERVAL_1MINUTE):
-        self.bm.start_kline_socket(asset, self._queue_msg, interval)   # Need to create a callback function
+        self.bm.start_kline_socket(asset, self.realtimeData, interval)   # Need to create a callback function
 
     def _download_account_details(self):
         pass
