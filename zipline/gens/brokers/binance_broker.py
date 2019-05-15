@@ -95,6 +95,14 @@ class BinanceConnection():
             self._process_tick(asset, open, high, low, close, volume)
 
     def _process_tick(self, asset, open, high, low, close, volume):
+        try :
+            ticker_info = self.client.get_ticker(asset)
+        except Exception:
+            log.error("Error getting ticker information for {}".format(asset))
+
+        last_trade_dt = pd.to_datetime(float(ticker_info['closeTime']), unit='ms', utc=True)
+
+        # Send request to get OHLCV data
         log.info("{} {} {} {} {} {}", asset, open, high, low, close, volume)
 
     def subscribe_to_asset(self, asset, interval=Client.KLINE_INTERVAL_1MINUTE):
@@ -143,9 +151,10 @@ class BinanceBroker(Broker):
 
     def subscribe_to_market_data(self, asset, interval='1m'):
         if asset not in self._subscribed_assets:
-            self.binance_socket.subscribe_to_market_data(str(asset.symbol), interval)
+            self.binance_socket.subscribe_to_asset(str(asset.symbol), interval)
             self._subscribed_assets.append(asset)
 
+    @property
     def subscribed_assets(self):
         return self._subscribed_assets
 
@@ -256,7 +265,6 @@ class BinanceBroker(Broker):
 
         for asset in assets:
             symbol = str(asset.symbol)
-
             # Subscribe to market data
-
-        self.binance_socket.subscribe_to_market_data(assets)
+            self.subscribe_to_market_data(assets)
+            trade_prices =
