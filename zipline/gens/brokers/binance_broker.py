@@ -59,13 +59,11 @@ class BinanceConnection():
             log.info("Received Execution Report")
 
     def _add_bar(self, symbol, last_trade_price, last_trade_size,
-                 last_trade_time, total_volume, vwap, single_trade_flag):
+                 last_trade_time, total_volume):
         bar = pd.DataFrame(index=pd.DatetimeIndex([last_trade_time]),
                            data={'last_trade_price': last_trade_price,
                                  'last_trade_size': last_trade_size,
-                                 'total_volume': total_volume,
-                                 'vwap': vwap,
-                                 'single_trade_flag': single_trade_flag})
+                                 'total_volume': total_volume})
 
         if symbol not in self.bars:
             self.bars[symbol] = bar
@@ -87,20 +85,23 @@ class BinanceConnection():
             asset = msg['s']
             log.info("Received {} Kline".format(asset))
             kline_data = msg['k']
-            open = kline_data['o']
+            open_p = kline_data['o']
             high = kline_data['h']
             low = kline_data['l']
             close = kline_data['c']
             volume = kline_data['v']
-            self._process_tick(asset, open, high, low, close, volume)
+            self._process_tick(asset, open_p, high, low, close, volume)
 
     def _process_tick(self, asset, open, high, low, close, volume):
-        try :
-            ticker_info = self.client.get_ticker(asset)
+        try:
+            ticker_info = self.client.get_ticker(asset)  # Get 24hr price change statistics
+            # Don't need this since we're ingesting Kline data
         except Exception:
             log.error("Error getting ticker information for {}".format(asset))
 
         last_trade_dt = pd.to_datetime(float(ticker_info['closeTime']), unit='ms', utc=True)
+
+        self._add_bar(asset, float(ticker_info['lastPrice'], ticker_info['lastQty'], last_trade_dt, volume))
 
         # Send request to get OHLCV data
         log.info("{} {} {} {} {} {}", asset, open, high, low, close, volume)
@@ -258,7 +259,44 @@ class BinanceBroker(Broker):
         pass
 
     def get_spot_value(self, assets, field, dt, data_frequency):
-        pass
+        symbol = str(assets.symbol)
+
+        assert(field in ('open', ' high', 'low', 'close', 'volume', 'price', 'last_traded'))
+
+        self.subscribe_to_market_data(assets)
+
+        bars = self.binance_socket.bars[symbol]
+
+        last_event_time = bars.index[-1]
+
+        minute_start = (last_event_time - pd.Timedelta('1 min')) \
+            .time()
+        minute_end = last_event_time.time()
+
+        if bars.empty:
+            return pd.NaT if field == 'last_traded' else np.NaN
+        else:
+            if field == 'price':
+                return bars.last_trade_price.iloc[-1]
+            elif field == 'last_traded':
+                return last_event_time or pd.NaT
+
+            minute_df = bars.between_time(minute_start, minute_end)
+
+            if minute_df.empty:
+                return np.NaN
+            else:
+                if field == 'open':
+                    return minute_df.last_trade_price.iloc[0]
+                elif field == 'close':
+                    return minute_df.last_trade_price.iloc[-1]
+                elif field == 'high':
+                    return minute_df.last_trade_price.max()
+                elif field == 'low':
+                    return minute_df.last_trade_price.min()
+                elif field == 'volume':
+                    return minute_df.last_trade_price.sum()
+
 
     def get_realtime_bars(self, assets, data_frequency):
         df = pd.DataFrame()
@@ -267,4 +305,7 @@ class BinanceBroker(Broker):
             symbol = str(asset.symbol)
             # Subscribe to market data
             self.subscribe_to_market_data(assets)
-            trade_prices =
+            trade_prices = self.binance_socket.bars[symbol]['last_trade_price']
+            trade_sizes = self.binance_socket.bars[symbol]['last_trade_size']
+
+        return df
