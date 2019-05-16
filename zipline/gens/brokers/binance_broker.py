@@ -109,6 +109,11 @@ class BinanceConnection():
     def subscribe_to_asset(self, asset, interval=Client.KLINE_INTERVAL_1MINUTE):
         self.bm.start_kline_socket(asset, self.realtimeData, interval)   # Need to create a callback function
 
+    def get_time_skew(self):
+        server_time = self.client.get_server_time()
+        self.time_skew = (pd.to_datetime('now', utc=True) -
+                          pd.to_datetime(long(server_time), unit='ms', utc=True))
+
     def _download_account_details(self):
         pass
 
@@ -187,7 +192,7 @@ class BinanceBroker(Broker):
 
     @property
     def time_skew(self):
-        return pd.Timedelta("0 sec")    # TODO: Determine timedelta
+        return self.binance_socket.get_time_skew()
 
     @property
     def orders(self):
@@ -297,8 +302,14 @@ class BinanceBroker(Broker):
                 elif field == 'volume':
                     return minute_df.last_trade_price.sum()
 
+    def get_realtime_bars(self, assets, frequency):
+        if frequency == '1m':
+            resample_freq = '1 Min'
+        elif frequency == '1d':
+            resample_freq = '24 H'
+        else:
+            raise ValueError("Invalid frequency specified: %s" % frequency)
 
-    def get_realtime_bars(self, assets, data_frequency):
         df = pd.DataFrame()
 
         for asset in assets:
@@ -307,5 +318,12 @@ class BinanceBroker(Broker):
             self.subscribe_to_market_data(assets)
             trade_prices = self.binance_socket.bars[symbol]['last_trade_price']
             trade_sizes = self.binance_socket.bars[symbol]['last_trade_size']
+            ohlcv = trade_prices.resample(resample_freq).ohlc()
+            ohlcv['volume'] = trade_sizes.resample(resample_freq).sum()
 
+            # Add asset as level 0 column; ohlcv will be used as level 1 cols
+            ohlcv.columns = pd.MultiIndex.from_product([[asset, ],
+                                                        ohlcv.columns])
+
+            df = pd.concat([df, ohlcv], axis=1)
         return df

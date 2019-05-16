@@ -1264,6 +1264,41 @@ class TestBinanceExchange(WithSimParams, ZiplineTestCase):
     ASSET_FINDER_EQUITY_SIDS = (1, 2)
     ASSET_FINDER_EQUITY_SYMBOLS = ("ETH", "LTC")
 
+    @staticmethod
+    def _tws_bars():
+        with patch('zipline.gens.brokers.ib_broker.TWSConnection.connect'):
+            tws = TWSConnection("localhost:9999:1111")
+
+        tws._add_bar('SPY', 12.4, 10,
+                     pd.to_datetime('2017-09-27 10:30:00', utc=True),
+                     10, 12.401, False)
+        tws._add_bar('SPY', 12.41, 10,
+                     pd.to_datetime('2017-09-27 10:30:40', utc=True),
+                     20, 12.411, False)
+        tws._add_bar('SPY', 12.44, 20,
+                     pd.to_datetime('2017-09-27 10:31:10', utc=True),
+                     40, 12.441, False)
+        tws._add_bar('SPY', 12.74, 5,
+                     pd.to_datetime('2017-09-27 10:37:10', utc=True),
+                     45, 12.741, True)
+        tws._add_bar('SPY', 12.99, 15,
+                     pd.to_datetime('2017-09-27 12:10:00', utc=True),
+                     60, 12.991, False)
+        tws._add_bar('XIV', 100.4, 100,
+                     pd.to_datetime('2017-09-27 9:32:00', utc=True),
+                     100, 100.401, False)
+        tws._add_bar('XIV', 100.41, 100,
+                     pd.to_datetime('2017-09-27 9:32:20', utc=True),
+                     200, 100.411, True)
+        tws._add_bar('XIV', 100.44, 200,
+                     pd.to_datetime('2017-09-27 9:41:10', utc=True),
+                     400, 100.441, False)
+        tws._add_bar('XIV', 100.74, 50,
+                     pd.to_datetime('2017-09-27 11:42:10', utc=True),
+                     450, 100.741, False)
+
+        return tws.bars
+
     '''
     @patch('zipline.gens.brokers.binance_broker.Client')
     def test_get_realtime_bars(self, tradeapi):
