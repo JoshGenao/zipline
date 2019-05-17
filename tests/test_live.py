@@ -1262,52 +1262,132 @@ class TestALPACABroker(WithSimParams, ZiplineTestCase):
 
 class TestBinanceExchange(WithSimParams, ZiplineTestCase):
     ASSET_FINDER_EQUITY_SIDS = (1, 2)
-    ASSET_FINDER_EQUITY_SYMBOLS = ("ETH", "LTC")
+    ASSET_FINDER_EQUITY_SYMBOLS = ("ETHBTC", "LTCBTC")
 
     @staticmethod
-    def _tws_bars():
-        with patch('zipline.gens.brokers.ib_broker.TWSConnection.connect'):
-            tws = TWSConnection("localhost:9999:1111")
+    def _bc_bars():
+        with patch('zipline.gens.brokers.binance_broker.BinanceConnection.connect'):
+            broker = BinanceBroker()
 
-        tws._add_bar('SPY', 12.4, 10,
-                     pd.to_datetime('2017-09-27 10:30:00', utc=True),
-                     10, 12.401, False)
-        tws._add_bar('SPY', 12.41, 10,
-                     pd.to_datetime('2017-09-27 10:30:40', utc=True),
-                     20, 12.411, False)
-        tws._add_bar('SPY', 12.44, 20,
-                     pd.to_datetime('2017-09-27 10:31:10', utc=True),
-                     40, 12.441, False)
-        tws._add_bar('SPY', 12.74, 5,
-                     pd.to_datetime('2017-09-27 10:37:10', utc=True),
-                     45, 12.741, True)
-        tws._add_bar('SPY', 12.99, 15,
-                     pd.to_datetime('2017-09-27 12:10:00', utc=True),
-                     60, 12.991, False)
-        tws._add_bar('XIV', 100.4, 100,
-                     pd.to_datetime('2017-09-27 9:32:00', utc=True),
-                     100, 100.401, False)
-        tws._add_bar('XIV', 100.41, 100,
-                     pd.to_datetime('2017-09-27 9:32:20', utc=True),
-                     200, 100.411, True)
-        tws._add_bar('XIV', 100.44, 200,
-                     pd.to_datetime('2017-09-27 9:41:10', utc=True),
-                     400, 100.441, False)
-        tws._add_bar('XIV', 100.74, 50,
-                     pd.to_datetime('2017-09-27 11:42:10', utc=True),
-                     450, 100.741, False)
+        broker.binance_socket._add_bar('ETHBTC', 0.03233300, 10,
+                     pd.to_datetime('2017-09-27 10:30:00', utc=True), 10)
+        broker.binance_socket._add_bar('ETHBTC', 0.03232700, 10,
+                     pd.to_datetime('2017-09-27 10:30:40', utc=True), 20)
+        broker.binance_socket._add_bar('ETHBTC', 0.03278900, 20,
+                     pd.to_datetime('2017-09-27 10:31:10', utc=True), 40)
+        broker.binance_socket._add_bar('ETHBTC', 0.03279100, 5,
+                     pd.to_datetime('2017-09-27 10:37:10', utc=True), 45)
+        broker.binance_socket._add_bar('ETHBTC', 0.03247500, 15,
+                     pd.to_datetime('2017-09-27 12:10:00', utc=True), 60)
+        broker.binance_socket._add_bar('LTCBTC', 0.01206400, 100,
+                     pd.to_datetime('2017-09-27 9:32:00', utc=True), 100)
+        broker.binance_socket._add_bar('LTCBTC', 0.01207400, 100,
+                     pd.to_datetime('2017-09-27 9:32:20', utc=True), 200)
+        broker.binance_socket._add_bar('LTCBTC', 0.01208400, 200,
+                     pd.to_datetime('2017-09-27 9:41:10', utc=True), 400)
+        broker.binance_socket._add_bar('LTCBTC', 0.01209400, 50,
+                     pd.to_datetime('2017-09-27 11:42:10', utc=True), 450)
 
-        return tws.bars
+        return broker.binance_socket.bars
 
-    '''
-    @patch('zipline.gens.brokers.binance_broker.Client')
-    def test_get_realtime_bars(self, tradeapi):
-        pass
+    @patch('zipline.gens.brokers.binance_broker.BinanceConnection')
+    def test_get_spot_value(self, binance_socket):
+        dt = None  # dt is not used in real broker
+        data_freq = 'minute'
+        asset = self.env.asset_finder.retrieve_asset(1)
+        bars = {'last_trade_price': [12, 10, 11, 14],
+                'last_trade_size': [1, 2, 3, 4],
+                'total_volume': [10, 10, 10, 10]}
 
-    @patch('zipline.gens.brokers.binance_broker.Client')
-    def test_get_spot_value(self, tradeapi):
-        pass
+        last_trade_times = [pd.to_datetime('2017-06-16 10:30:00', utc=True),
+                            pd.to_datetime('2017-06-16 10:30:11', utc=True),
+                            pd.to_datetime('2017-06-16 10:30:30', utc=True),
+                            pd.to_datetime('2017-06-17 10:31:9', utc=True)]
+        index = pd.DatetimeIndex(last_trade_times)
+        broker = BinanceBroker()
+        binance_socket.return_value.bars = {asset.symbol: pd.DataFrame(
+            index=index, data=bars)}
 
+        price = broker.get_spot_value(asset, 'price', dt, data_freq)
+        last_trade = broker.get_spot_value(asset, 'last_traded', dt, data_freq)
+        open_ = broker.get_spot_value(asset, 'open', dt, data_freq)
+        high = broker.get_spot_value(asset, 'high', dt, data_freq)
+        low = broker.get_spot_value(asset, 'low', dt, data_freq)
+        close = broker.get_spot_value(asset, 'close', dt, data_freq)
+        volume = broker.get_spot_value(asset, 'volume', dt, data_freq)
+
+        # Only the last minute is taken into account, therefore
+        # the first bar is ignored
+        assert price == bars['last_trade_price'][-1]
+        assert last_trade == last_trade_times[-1]
+        assert open_ == bars['last_trade_price'][1]
+        assert high == max(bars['last_trade_price'][1:])
+        assert low == min(bars['last_trade_price'][1:])
+        assert close == bars['last_trade_price'][-1]
+        assert volume == sum(bars['total_volume'][1:])
+
+
+    def test_get_realtime_bars(self):
+        bars = self._bc_bars()
+
+        with patch('zipline.gens.brokers.binance_broker.BinanceConnection'):
+            broker = BinanceBroker()
+            broker.binance_socket.bars = bars
+
+        assets = (self.env.asset_finder.retrieve_asset(1),
+                  self.env.asset_finder.retrieve_asset(2))
+
+        realtime_history = broker.get_realtime_bars(assets, '1m')
+
+        asset_ethbtc = self.env.asset_finder.retrieve_asset(1)
+        asset_ltcbtc = self.env.asset_finder.retrieve_asset(2)
+
+        assert asset_ethbtc in realtime_history
+        assert asset_ltcbtc in realtime_history
+
+        ethbtc = realtime_history[asset_ethbtc]
+        ltcbtc = realtime_history[asset_ltcbtc]
+
+        assert list(ethbtc.columns) == ['open', 'high', 'low', 'close', 'volume']
+        assert list(ltcbtc.columns) == ['open', 'high', 'low', 'close', 'volume']
+
+        # There are 159 minutes between the first (XIV @ 2017-09-27 9:32:00)
+        # and the last bar (SPY @ 2017-09-27 12:10:00)
+        assert len(realtime_history) == 159
+
+        ethbtc_non_na = ethbtc.dropna()
+        ltcbtc_non_na = ltcbtc.dropna()
+
+        assert len(ethbtc_non_na) == 4
+        assert len(ltcbtc_non_na) == 3
+
+
+        assert ethbtc_non_na.iloc[0].name == pd.to_datetime(
+            '2017-09-27 10:30:00', utc=True)
+        assert ethbtc_non_na.iloc[0].open == 0.03233300
+        assert ethbtc_non_na.iloc[0].high == 0.03233300
+        assert ethbtc_non_na.iloc[0].low == 0.03232700
+        assert ethbtc_non_na.iloc[0].close == 0.03232700
+        assert ethbtc_non_na.iloc[0].volume == 30
+
+        assert ethbtc_non_na.iloc[1].name == pd.to_datetime(
+            '2017-09-27 10:31:00', utc=True)
+        assert ethbtc_non_na.iloc[1].open == 0.03278900
+        assert ethbtc_non_na.iloc[1].high == 0.03278900
+        assert ethbtc_non_na.iloc[1].low == 0.03278900
+        assert ethbtc_non_na.iloc[1].close == 0.03278900
+        assert ethbtc_non_na.iloc[1].volume == 40
+
+        assert ethbtc_non_na.iloc[-1].name == pd.to_datetime(
+            '2017-09-27 12:10:00', utc=True)
+        assert ethbtc_non_na.iloc[-1].open == 0.03247500
+        assert ethbtc_non_na.iloc[-1].high == 0.03247500
+        assert ethbtc_non_na.iloc[-1].low == 0.03247500
+        assert ethbtc_non_na.iloc[-1].close == 0.03247500
+        assert ethbtc_non_na.iloc[-1].volume == 60
+
+
+    ''''
     @patch('zipline.gens.brokers.binance_broker.Client')
     def test_is_alive(self, tradeapi):
         pass

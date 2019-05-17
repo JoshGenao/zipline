@@ -85,21 +85,22 @@ class BinanceConnection():
             asset = msg['s']
             log.info("Received {} Kline".format(asset))
             kline_data = msg['k']
+            close_time = msg['T']
             open_p = kline_data['o']
             high = kline_data['h']
             low = kline_data['l']
             close = kline_data['c']
             volume = kline_data['v']
-            self._process_tick(asset, open_p, high, low, close, volume)
+            self._process_tick(asset, close_time, open_p, high, low, close, volume)
 
-    def _process_tick(self, asset, open, high, low, close, volume):
+    def _process_tick(self, asset, close_time, open_p, high, low, close, volume):
         try:
             ticker_info = self.client.get_ticker(asset)  # Get 24hr price change statistics
             # Don't need this since we're ingesting Kline data
         except Exception:
             log.error("Error getting ticker information for {}".format(asset))
 
-        last_trade_dt = pd.to_datetime(float(ticker_info['closeTime']), unit='ms', utc=True)
+        last_trade_dt = pd.to_datetime(float(close_time), unit='ms', utc=True)
 
         self._add_bar(asset, float(ticker_info['lastPrice'], ticker_info['lastQty'], last_trade_dt, volume))
 
@@ -151,9 +152,7 @@ class BinanceBroker(Broker):
         self._api = Client(binance_api_key, binance_api_secret)
         self.binance_socket = BinanceConnection(self._api)
         self.fiat_currency = "USD"
-
         self._subscribed_assets = []
-        super(self.__class__, self).__init__()
 
     def subscribe_to_market_data(self, asset, interval='1m'):
         if asset not in self._subscribed_assets:
@@ -266,7 +265,7 @@ class BinanceBroker(Broker):
     def get_spot_value(self, assets, field, dt, data_frequency):
         symbol = str(assets.symbol)
 
-        assert(field in ('open', ' high', 'low', 'close', 'volume', 'price', 'last_traded'))
+        assert(field in ('open', 'high', 'low', 'close', 'volume', 'price', 'last_traded'))
 
         self.subscribe_to_market_data(assets)
 
@@ -286,7 +285,7 @@ class BinanceBroker(Broker):
             elif field == 'last_traded':
                 return last_event_time or pd.NaT
 
-            minute_df = bars.between_time(minute_start, minute_end)
+            minute_df = bars.between_time(minute_start, minute_end, include_start=True, include_end=True)
 
             if minute_df.empty:
                 return np.NaN
@@ -300,7 +299,7 @@ class BinanceBroker(Broker):
                 elif field == 'low':
                     return minute_df.last_trade_price.min()
                 elif field == 'volume':
-                    return minute_df.last_trade_price.sum()
+                    return minute_df.total_volume.sum()
 
     def get_realtime_bars(self, assets, frequency):
         if frequency == '1m':
@@ -315,9 +314,9 @@ class BinanceBroker(Broker):
         for asset in assets:
             symbol = str(asset.symbol)
             # Subscribe to market data
-            self.subscribe_to_market_data(assets)
+            self.subscribe_to_market_data(asset)
             trade_prices = self.binance_socket.bars[symbol]['last_trade_price']
-            trade_sizes = self.binance_socket.bars[symbol]['last_trade_size']
+            trade_sizes = self.binance_socket.bars[symbol]['total_volume']
             ohlcv = trade_prices.resample(resample_freq).ohlc()
             ohlcv['volume'] = trade_sizes.resample(resample_freq).sum()
 
