@@ -1269,24 +1269,26 @@ class TestBinanceExchange(WithSimParams, ZiplineTestCase):
         with patch('zipline.gens.brokers.binance_broker.BinanceConnection.connect'):
             broker = BinanceBroker()
 
-        broker.binance_socket._add_bar('ETHBTC', 0.03233300, 10,
-                     pd.to_datetime('2017-09-27 10:30:00', utc=True), 10)
-        broker.binance_socket._add_bar('ETHBTC', 0.03232700, 10,
-                     pd.to_datetime('2017-09-27 10:30:40', utc=True), 20)
-        broker.binance_socket._add_bar('ETHBTC', 0.03278900, 20,
-                     pd.to_datetime('2017-09-27 10:31:10', utc=True), 40)
-        broker.binance_socket._add_bar('ETHBTC', 0.03279100, 5,
-                     pd.to_datetime('2017-09-27 10:37:10', utc=True), 45)
-        broker.binance_socket._add_bar('ETHBTC', 0.03247500, 15,
-                     pd.to_datetime('2017-09-27 12:10:00', utc=True), 60)
-        broker.binance_socket._add_bar('LTCBTC', 0.01206400, 100,
-                     pd.to_datetime('2017-09-27 9:32:00', utc=True), 100)
-        broker.binance_socket._add_bar('LTCBTC', 0.01207400, 100,
-                     pd.to_datetime('2017-09-27 9:32:20', utc=True), 200)
-        broker.binance_socket._add_bar('LTCBTC', 0.01208400, 200,
-                     pd.to_datetime('2017-09-27 9:41:10', utc=True), 400)
-        broker.binance_socket._add_bar('LTCBTC', 0.01209400, 50,
-                     pd.to_datetime('2017-09-27 11:42:10', utc=True), 450)
+        broker.binance_socket._add_bar('ETHBTC', pd.to_datetime('2017-09-27 10:30:00', utc=True),
+                                       0.03233300, 0.03233300, 0.03232700, 0.03232700, 30)
+
+        broker.binance_socket._add_bar('ETHBTC', pd.to_datetime('2017-09-27 10:31:10', utc=True),
+                                       0.03232700, 0.03232700, 0.03232700, 0.03232700, 40)
+
+        broker.binance_socket._add_bar('ETHBTC', pd.to_datetime('2017-09-27 10:37:10', utc=True),
+                                       0.03279100, 0.03279100, 0.03279100, 0.03279100, 45)
+
+        broker.binance_socket._add_bar('ETHBTC', pd.to_datetime('2017-09-27 12:10:00', utc=True),
+                                       0.03247500, 0.03247500, 0.03247500, 0.03247500, 60)
+
+        broker.binance_socket._add_bar('LTCBTC', pd.to_datetime('2017-09-27 9:32:00', utc=True),
+                                       0.01206400, 0.01207400, 0.01206400, 0.01206400, 300)
+
+        broker.binance_socket._add_bar('LTCBTC', pd.to_datetime('2017-09-27 9:41:10', utc=True),
+                                       0.01208400, 0.01208400, 0.01208400, 0.01208400, 400)
+
+        broker.binance_socket._add_bar('LTCBTC', pd.to_datetime('2017-09-27 11:42:10', utc=True),
+                                       0.01209400, 0.01209400, 0.01209400, 0.01209400, 400)
 
         return broker.binance_socket.bars
 
@@ -1348,8 +1350,11 @@ class TestBinanceExchange(WithSimParams, ZiplineTestCase):
         ethbtc = realtime_history[asset_ethbtc]
         ltcbtc = realtime_history[asset_ltcbtc]
 
-        assert list(ethbtc.columns) == ['open', 'high', 'low', 'close', 'volume']
-        assert list(ltcbtc.columns) == ['open', 'high', 'low', 'close', 'volume']
+        eth_btc_column_list = list(ethbtc.columns)
+        ltc_btc_column_list = list(ltcbtc.columns)
+
+        assert set(eth_btc_column_list) == set(['open', 'high', 'low', 'close', 'volume'])
+        assert set(ltc_btc_column_list) == set(['open', 'high', 'low', 'close', 'volume'])
 
         # There are 159 minutes between the first (XIV @ 2017-09-27 9:32:00)
         # and the last bar (SPY @ 2017-09-27 12:10:00)
@@ -1372,10 +1377,10 @@ class TestBinanceExchange(WithSimParams, ZiplineTestCase):
 
         assert ethbtc_non_na.iloc[1].name == pd.to_datetime(
             '2017-09-27 10:31:00', utc=True)
-        assert ethbtc_non_na.iloc[1].open == 0.03278900
-        assert ethbtc_non_na.iloc[1].high == 0.03278900
-        assert ethbtc_non_na.iloc[1].low == 0.03278900
-        assert ethbtc_non_na.iloc[1].close == 0.03278900
+        assert ethbtc_non_na.iloc[1].open == 0.03232700
+        assert ethbtc_non_na.iloc[1].high == 0.03232700
+        assert ethbtc_non_na.iloc[1].low == 0.03232700
+        assert ethbtc_non_na.iloc[1].close == 0.03232700
         assert ethbtc_non_na.iloc[1].volume == 40
 
         assert ethbtc_non_na.iloc[-1].name == pd.to_datetime(

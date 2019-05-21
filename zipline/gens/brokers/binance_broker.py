@@ -58,24 +58,21 @@ class BinanceConnection():
         elif msg['e'] == "executionReport":
             log.info("Received Execution Report")
 
-    def _add_bar(self, symbol, last_trade_price, last_trade_size,
-                 last_trade_time, total_volume):
+    def _add_bar(self, symbol, last_trade_time, o, h, l, c, v):
         bar = pd.DataFrame(index=pd.DatetimeIndex([last_trade_time]),
-                           data={'last_trade_price': last_trade_price,
-                                 'last_trade_size': last_trade_size,
-                                 'total_volume': total_volume})
+                           data={'open': o,
+                                 'high': h,
+                                 'low': l,
+                                 'close': c,
+                                 'volume': v})
 
+        # open, high, low, close, volume
         if symbol not in self.bars:
             self.bars[symbol] = bar
         else:
             self.bars[symbol] = self.bars[symbol].append(bar)
 
     def realtimeData(self, msg):
-        '''
-
-        :param msg:
-        :return:
-        '''
         if msg['e'] == "error":
             log.error("Websocket Received an Error")
             self.bm.close()
@@ -94,18 +91,13 @@ class BinanceConnection():
             self._process_tick(asset, close_time, open_p, high, low, close, volume)
 
     def _process_tick(self, asset, close_time, open_p, high, low, close, volume):
-        try:
-            ticker_info = self.client.get_ticker(asset)  # Get 24hr price change statistics
-            # Don't need this since we're ingesting Kline data
-        except Exception:
-            log.error("Error getting ticker information for {}".format(asset))
 
         last_trade_dt = pd.to_datetime(float(close_time), unit='ms', utc=True)
 
-        self._add_bar(asset, float(ticker_info['lastPrice'], ticker_info['lastQty'], last_trade_dt, volume))
+        self._add_bar(asset, last_trade_dt, open_p, high, low, close, volume)
 
         # Send request to get OHLCV data
-        log.info("{} {} {} {} {} {}", asset, open, high, low, close, volume)
+        log.info("{} {} {} {} {} {}", asset, open_p, high, low, close, volume)
 
     def subscribe_to_asset(self, asset, interval=Client.KLINE_INTERVAL_1MINUTE):
         self.bm.start_kline_socket(asset, self.realtimeData, interval)   # Need to create a callback function
@@ -315,14 +307,13 @@ class BinanceBroker(Broker):
             symbol = str(asset.symbol)
             # Subscribe to market data
             self.subscribe_to_market_data(asset)
-            trade_prices = self.binance_socket.bars[symbol]['last_trade_price']
-            trade_sizes = self.binance_socket.bars[symbol]['total_volume']
-            ohlcv = trade_prices.resample(resample_freq).ohlc()
-            ohlcv['volume'] = trade_sizes.resample(resample_freq).sum()
 
-            # Add asset as level 0 column; ohlcv will be used as level 1 cols
-            ohlcv.columns = pd.MultiIndex.from_product([[asset, ],
-                                                        ohlcv.columns])
+            asset_df = self.binance_socket.bars[symbol].copy()
+            resample_df = asset_df.resample(resample_freq).sum()
 
-            df = pd.concat([df, ohlcv], axis=1)
+            resample_df.columns = pd.MultiIndex.from_product([[asset, ],
+                                                              resample_df.columns])
+
+            df = pd.concat([df, resample_df], axis=1)
+
         return df
