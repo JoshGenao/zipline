@@ -27,8 +27,6 @@ log = Logger('Binance Exchange')
 class BinanceConnection():
     def __init__(self, client):
         self.client = client    # Binance API client
-        self._host = "stream.binance.com"
-        self._port = "9443"
         self.managed_accounts = None
         self.sockets = {}
         self.bars = {}
@@ -37,7 +35,7 @@ class BinanceConnection():
         self.connect()
 
     def connect(self):
-        log.info("Connecting: {}:{}".format(self._host, self._port))
+        log.info("Connecting to Binance Exchange:")
         #for symbol in symbols:
         if self.bm.start_user_socket(self._queue_msg):      # start the account user socket
             log.info("Started User socket")
@@ -273,7 +271,7 @@ class BinanceBroker(Broker):
             return pd.NaT if field == 'last_traded' else np.NaN
         else:
             if field == 'price':
-                return bars.last_trade_price.iloc[-1]
+                return bars.close.iloc[-1]
             elif field == 'last_traded':
                 return last_event_time or pd.NaT
 
@@ -283,15 +281,15 @@ class BinanceBroker(Broker):
                 return np.NaN
             else:
                 if field == 'open':
-                    return minute_df.last_trade_price.iloc[0]
+                    return minute_df.open.iloc[-1]
                 elif field == 'close':
-                    return minute_df.last_trade_price.iloc[-1]
+                    return minute_df.close.iloc[-1]
                 elif field == 'high':
-                    return minute_df.last_trade_price.max()
+                    return minute_df.high.iloc[-1]
                 elif field == 'low':
-                    return minute_df.last_trade_price.min()
+                    return minute_df.low.iloc[-1]
                 elif field == 'volume':
-                    return minute_df.total_volume.sum()
+                    return minute_df.volume.iloc[-1]
 
     def get_realtime_bars(self, assets, frequency):
         if frequency == '1m':

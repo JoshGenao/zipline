@@ -1297,14 +1297,13 @@ class TestBinanceExchange(WithSimParams, ZiplineTestCase):
         dt = None  # dt is not used in real broker
         data_freq = 'minute'
         asset = self.env.asset_finder.retrieve_asset(1)
-        bars = {'last_trade_price': [12, 10, 11, 14],
-                'last_trade_size': [1, 2, 3, 4],
-                'total_volume': [10, 10, 10, 10]}
+        bars = {'open': 12,
+                'high': 14,
+                'low': 1,
+                'close': 5,
+                'volume': 10}
 
-        last_trade_times = [pd.to_datetime('2017-06-16 10:30:00', utc=True),
-                            pd.to_datetime('2017-06-16 10:30:11', utc=True),
-                            pd.to_datetime('2017-06-16 10:30:30', utc=True),
-                            pd.to_datetime('2017-06-17 10:31:9', utc=True)]
+        last_trade_times = [pd.to_datetime('2017-06-16 10:30:00', utc=True)]
         index = pd.DatetimeIndex(last_trade_times)
         broker = BinanceBroker()
         binance_socket.return_value.bars = {asset.symbol: pd.DataFrame(
@@ -1320,14 +1319,13 @@ class TestBinanceExchange(WithSimParams, ZiplineTestCase):
 
         # Only the last minute is taken into account, therefore
         # the first bar is ignored
-        assert price == bars['last_trade_price'][-1]
+        assert price == bars['close']
         assert last_trade == last_trade_times[-1]
-        assert open_ == bars['last_trade_price'][1]
-        assert high == max(bars['last_trade_price'][1:])
-        assert low == min(bars['last_trade_price'][1:])
-        assert close == bars['last_trade_price'][-1]
-        assert volume == sum(bars['total_volume'][1:])
-
+        assert open_ == bars['open']
+        assert high == bars['high']
+        assert low == bars['low']
+        assert close == bars['close']
+        assert volume == bars['volume']
 
     def test_get_realtime_bars(self):
         bars = self._bc_bars()
