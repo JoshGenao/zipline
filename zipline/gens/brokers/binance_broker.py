@@ -1,5 +1,6 @@
 from zipline.gens.brokers.broker import Broker
 from binance.client import Client
+from binance.exceptions import BinanceAPIException, BinanceRequestException
 from binance.websockets import BinanceSocketManager
 from zipline.finance.order import (Order as ZPOrder,
                                    ORDER_STATUS as ZP_ORDER_STATUS)
@@ -23,6 +24,7 @@ from logbook import Logger
 import sys
 
 log = Logger('Binance Exchange')
+
 
 class BinanceConnection():
     def __init__(self, client):
@@ -70,7 +72,7 @@ class BinanceConnection():
         else:
             self.bars[symbol] = self.bars[symbol].append(bar)
 
-    def realtimeData(self, msg):
+    def realtime_data(self, msg):
         if msg['e'] == "error":
             log.error("Websocket Received an Error")
             self.bm.close()
@@ -89,7 +91,6 @@ class BinanceConnection():
             self._process_tick(asset, close_time, open_p, high, low, close, volume)
 
     def _process_tick(self, asset, close_time, open_p, high, low, close, volume):
-
         last_trade_dt = pd.to_datetime(float(close_time), unit='ms', utc=True)
 
         self._add_bar(asset, last_trade_dt, open_p, high, low, close, volume)
@@ -98,7 +99,7 @@ class BinanceConnection():
         log.info("{} {} {} {} {} {}", asset, open_p, high, low, close, volume)
 
     def subscribe_to_asset(self, asset, interval=Client.KLINE_INTERVAL_1MINUTE):
-        self.bm.start_kline_socket(asset, self.realtimeData, interval)   # Need to create a callback function
+        self.bm.start_kline_socket(asset, self.realtime_data, interval)   # Need to create a callback function
 
     def get_time_skew(self):
         server_time = self.client.get_server_time()
@@ -141,6 +142,7 @@ class BinanceBroker(Broker):
 
         self._api = Client(binance_api_key, binance_api_secret)
         self.binance_socket = BinanceConnection(self._api)
+        self._orders = {}
         self.fiat_currency = "USD"
         self._subscribed_assets = []
 
@@ -192,30 +194,33 @@ class BinanceBroker(Broker):
         pass
 
     def is_alive(self):
-        pass
+        try:
+            self._api.ping()
+            return True
+        except (BinanceAPIException, BinanceRequestException):
+            return False
 
     def order(self, asset, amount, style):
         symbol = asset.symbol
-        qty = amount if amount > 0 else -amount
-        side = 'buy' if amount > 0 else 'sell'
+        is_buy = amount > 0
+        qty = amount if is_buy else -amount
+        side = 'BUY' if is_buy else 'SELL'
 
-        limit_price = style.get_limit_price(side == 'buy') or None
-        stop_price = style.get_stop_price(side == 'buy') or None
+        limit_price = style.get_limit_price(is_buy) or 0
+        stop_price = style.get_stop_price(is_buy) or 0
 
         order_id = 0 #TODO: Get order id
         dt = pd.to_datetime('now', utc=True)
 
-        order_type = 'market'
+        order_type = 'MARKET'
         if isinstance(style, MarketOrder):
-            order_type = 'market'
+            order_type = 'MARKET'
         elif isinstance(style, LimitOrder):
-            order_type = 'limit'
+            order_type = 'LIMIT'
         elif isinstance(style, StopOrder):
-            order_type = 'stop'
+            order_type = 'STOP_LOSS'
         elif isinstance(style, StopLimitOrder):
-            order_type = 'stop_limit'
-
-        #TODO: Add in Binance order types: TAKE_PROFIT, TAKE_PROFIT_LIMIT, LIMIT_MAKER
+            order_type = 'STOP_LOSS_LIMIT'
 
         order = ZPOrder(
             dt=dt,
@@ -226,9 +231,7 @@ class BinanceBroker(Broker):
             id=order_id
         )
 
-        time_in_force = "GTC"   #   GTC = Good Till Cancelled
-                                #   FOK = Fill or Kill
-                                #   IOC = Immediate or Cancel
+        time_in_force = "GTC"   # GTC = Good Till Cancelled, FOK = Fill or Kill, IOC = Immediate or Cancel
 
         #TODO: Call api to place order
 
@@ -244,13 +247,51 @@ class BinanceBroker(Broker):
                 stop_price=stop_price,
                 tif=time_in_force
             ))
+
+        try:
+            response=''
+
+            if order_type == 'MARKET':
+                response = self._api.create_order(symbol=symbol,
+                                                  side=side,
+                                                  type=order_type,
+                                                  timeInForce=time_in_force,
+                                                  quantity=amount)
+            elif order_type == 'LIMIT':
+                response = self._api.create_order(symbol=symbol,
+                                                  side=side,
+                                                  type=order_type,
+                                                  timeInForce=time_in_force,
+                                                  quantity=amount,
+                                                  price=limit_price)
+            elif order_type == 'STOP_LOSS':
+                response = self._api.create_order(symbol=symbol,
+                                                  side=side,
+                                                  type=order_type,
+                                                  timeInForce=time_in_force,
+                                                  quantity=amount,
+                                                  stopPrice=stop_price)
+            elif order_type == 'STOP_LOSS_LIMIT':
+                response = self._api.create_order(symbol=symbol,
+                                                  side=side,
+                                                  type=order_type,
+                                                  timeInForce=time_in_force,
+                                                  quantity=amount,
+                                                  price=limit_price,
+                                                  stopPrice=stop_price)
+
+        except (BinanceRequestException, BinanceAPIException):
+            log.error("Order Error! {}".format(symbol))
+
         return order
 
     def cancel_order(self, order_param):
         pass
 
     def get_last_traded_dt(self, asset):
-        pass
+        self.subscribe_to_market_data(asset)
+
+        return self.binance_socket.bars[asset.symbol].index[-1]
 
     def get_spot_value(self, assets, field, dt, data_frequency):
         symbol = str(assets.symbol)
