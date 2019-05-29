@@ -56,7 +56,12 @@ class BinanceConnection():
             log.info("Received Account Info")
             # msg['B']
         elif msg['e'] == "executionReport":
-            log.info("Received Execution Report")
+            log.info("Received Order Update")
+            # Update Order Information
+            self._update_order()
+
+    def _update_order(self, order_id, status, ):
+        pass
 
     def _add_bar(self, symbol, last_trade_time, o, h, l, c, v):
         bar = pd.DataFrame(index=pd.DatetimeIndex([last_trade_time]),
@@ -209,9 +214,6 @@ class BinanceBroker(Broker):
         limit_price = style.get_limit_price(is_buy) or 0
         stop_price = style.get_stop_price(is_buy) or 0
 
-        order_id = 0 #TODO: Get order id
-        dt = pd.to_datetime('now', utc=True)
-
         order_type = 'MARKET'
         if isinstance(style, MarketOrder):
             order_type = 'MARKET'
@@ -222,31 +224,7 @@ class BinanceBroker(Broker):
         elif isinstance(style, StopLimitOrder):
             order_type = 'STOP_LOSS_LIMIT'
 
-        order = ZPOrder(
-            dt=dt,
-            asset=asset,
-            amount=amount,
-            stop=stop_price,
-            limit=limit_price,
-            id=order_id
-        )
-
         time_in_force = "GTC"   # GTC = Good Till Cancelled, FOK = Fill or Kill, IOC = Immediate or Cancel
-
-        #TODO: Call api to place order
-
-        log.info("Placing order-{order_id}: "
-            "{action} {qty} {symbol} with {order_type} order. "
-            "limit_price={limit_price} stop_price={stop_price} {tif}".format(
-                order_id=order_id,
-                action=side,
-                qty=qty,
-                symbol=symbol,
-                order_type=order_type,
-                limit_price=limit_price,
-                stop_price=stop_price,
-                tif=time_in_force
-            ))
 
         try:
             response=''
@@ -280,8 +258,42 @@ class BinanceBroker(Broker):
                                                   price=limit_price,
                                                   stopPrice=stop_price)
 
-        except (BinanceRequestException, BinanceAPIException):
-            log.error("Order Error! {}".format(symbol))
+        except (BinanceRequestException, BinanceAPIException) as e:
+            log.error("Order Error! {}:{}".format(symbol, e))
+
+        dt = pd.to_datetime(float(response['transactTime']), unit='ms', utc=True)
+
+        order = ZPOrder(
+            dt=dt,
+            asset=asset,
+            amount=amount,
+            stop=stop_price,
+            limit=limit_price,
+            id=response['orderId']
+        )
+
+        order.status = ZP_ORDER_STATUS.OPEN
+        if response['status'] == self._api.ORDER_STATUS_CANCELED:
+            order.status = ZP_ORDER_STATUS.CANCELLED
+        if response['status'] == self._api.ORDER_STATUS_REJECTED:
+            order.status = ZP_ORDER_STATUS.REJECTED
+        if response['status'] == self._api.ORDER_STATUS_FILLED:
+            order.status = ZP_ORDER_STATUS.FILLED
+            order.filled = int(response['executedQty'])
+
+
+        log.info("Placing order-{order_id}: "
+            "{action} {qty} {symbol} with {order_type} order. "
+            "limit_price={limit_price} stop_price={stop_price} {tif}".format(
+                order_id=response['orderId'],
+                action=side,
+                qty=qty,
+                symbol=symbol,
+                order_type=order_type,
+                limit_price=limit_price,
+                stop_price=stop_price,
+                tif=time_in_force
+            ))
 
         return order
 
