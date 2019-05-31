@@ -9,7 +9,7 @@ from zipline.finance.exchange_execution import (MarketOrder,
                                                 LimitOrder,
                                                 StopOrder,
                                                 StopLimitOrder)
-
+from zipline.finance.transaction import Transaction
 import zipline.protocol as zp
 
 from urlparse import parse_qs
@@ -198,7 +198,20 @@ class BinanceBroker(Broker):
 
     @property
     def transactions(self):
-        pass
+        orders = self._api.get_all_orders()
+        results = {}
+        for o in orders:
+            if o.status == self._api.ORDER_STATUS_FILLED:
+                tx = Transaction(
+                    asset=o.symbol,
+                    amount=o.executedQty,
+                    dt=pd.to_datetime(float(o.time), unit='ms', utc=True),
+                    price=float(o.price),
+                    order_id=o.orderId,
+                    commission=0.0,
+                )
+                results[o.orderId] = tx
+        return results
 
     def is_alive(self):
         try:
