@@ -147,7 +147,6 @@ class BinanceBroker(Broker):
 
         self._api = Client(binance_api_key, binance_api_secret)
         self.binance_socket = BinanceConnection(self._api)
-        self._orders = {}
         self.fiat_currency = "USD"
         self._subscribed_assets = []
 
@@ -192,7 +191,10 @@ class BinanceBroker(Broker):
 
     @property
     def orders(self):
-        pass
+        return {
+            o.orderId: self._order2zp(o)
+            for o in self._api.get_all_orders()
+        }
 
     @property
     def transactions(self):
@@ -204,6 +206,28 @@ class BinanceBroker(Broker):
             return True
         except (BinanceAPIException, BinanceRequestException):
             return False
+
+    def _order2zp(self, order):
+        zp_order = ZPOrder(
+            id=order.orderId,
+            asset=order.symbol,
+            amount=float(order.origQty) if order.side == self._api.SIDE_BUY else -float(order.origQty),
+            stop=float(order.stopPrice) if order.type == self._api.ORDER_TYPE_STOP_LOSS else None,
+            limit=float(order.price) if order.type == self._api.ORDER_TYPE_LIMIT else None,
+            dt=pd.to_datetime(float(order.time), unit='ms', utc=True),
+            commission=0,
+        )
+
+        zp_order.status = ZP_ORDER_STATUS.OPEN
+        if order.status == self._api.ORDER_STATUS_CANCELED:
+            order.status = ZP_ORDER_STATUS.CANCELLED
+        if order.status == self._api.ORDER_STATUS_REJECTED:
+            order.status = ZP_ORDER_STATUS.REJECTED
+        if order.status == self._api.ORDER_STATUS_FILLED:
+            order.status = ZP_ORDER_STATUS.FILLED
+            order.filled = int(order.executedQty)
+
+        return zp_order
 
     def order(self, asset, amount, style):
         symbol = asset.symbol
@@ -297,12 +321,17 @@ class BinanceBroker(Broker):
 
         return order
 
-    def cancel_order(self, order_param):
-        pass
+    def cancel_order(self, zp_order_id):
+        try:
+            order = self.orders[zp_order_id].id
+            symbol = self.orders[zp_order_id].asset
+            self._api.cancel_order(symbol=symbol, orderid=order)
+        except (BinanceRequestException, BinanceAPIException) as e:
+            log.error(e)
+            return
 
     def get_last_traded_dt(self, asset):
         self.subscribe_to_market_data(asset)
-
         return self.binance_socket.bars[asset.symbol].index[-1]
 
     def get_spot_value(self, assets, field, dt, data_frequency):
@@ -358,10 +387,8 @@ class BinanceBroker(Broker):
             symbol = str(asset.symbol)
             # Subscribe to market data
             self.subscribe_to_market_data(asset)
-
             asset_df = self.binance_socket.bars[symbol].copy()
             resample_df = asset_df.resample(resample_freq).sum()
-
             resample_df.columns = pd.MultiIndex.from_product([[asset, ],
                                                               resample_df.columns])
 
