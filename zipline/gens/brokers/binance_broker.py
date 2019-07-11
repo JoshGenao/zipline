@@ -84,14 +84,14 @@ class BinanceConnection():
             self.connect()
 
         elif msg['e'] == "kline":
-            asset = msg['s']
+            asset = str(msg['s'])
             log.info("Received {} Kline".format(asset))
             kline_data = msg['k']
             close_time = msg['T']
-            open_p = kline_data['o']
-            high = kline_data['h']
-            low = kline_data['l']
-            close = kline_data['c']
+            open_p = float(kline_data['o'])
+            high = float(kline_data['h'])
+            low = float(kline_data['l'])
+            close = float(kline_data['c'])
             volume = kline_data['v']
             self._process_tick(asset, close_time, open_p, high, low, close, volume)
 
@@ -161,29 +161,65 @@ class BinanceBroker(Broker):
 
     @property
     def positions(self):
-        '''Get a list of open positions'''
         z_positions = zp.Positions()
         account = self._api.get_account()
-        assets = filter(lambda coins: coins['free'] > u'0.00000000', account['balances'])
+        assets = filter(lambda coins: float(coins['free']) > 0.00000000, account['balances'])
         positions = [li['asset'] for li in assets]
         for pos in positions:
-            z_position = zp.Position(pos)
-            #z_position.amount =
-            #z_position.cost_basis = float()
-            z_position.last_sale_price = None
-            z_position.last_sale_date = None
-            z_positions[pos] = z_position
+            symbol = str(pos['asset'])
+            z_position = zp.Position(symbol)
+            z_position.amount = float(pos['free'])
+            btc_pair = symbol + 'BTC'
+            try:
+                trade = self._api.get_my_trades(symbol=btc_pair)[-1]
+                z_position.cost_basis = float(trade['price'])
+            except BinanceAPIException:
+                continue
 
+            if symbol in self.binance_socket.bars:
+                z_position.last_sale_price = float(self.binance_socket.bars[symbol].last_trade_price.iloc[-1])
+                z_position.last_sale_date = float(self.binance_socket.bars[symbol].index.values[-1])
+            else:
+                z_position.last_sale_price = None
+                z_position.last_sale_date = None
+
+            z_positions[pos] = z_position
+            return z_positions
 
     @property
     def portfolio(self):
         account = self._api.get_account()
         z_portfolio = zp.Portfolio()
-        pass
+        y = filter(lambda x: x['asset'] == 'BTC', account['balances'])
+        z_portfolio.cash = float(y[0]['free'])
+        z_portfolio.positions = self.positions
+        z_portfolio.positions_value = self.get_position_value(account)
+        return z_portfolio
 
     @property
     def account(self):
-        pass
+        binance_account = self._api.get_account()
+        z_account = zp.Account()
+        y = filter(lambda x: x['asset'] == 'BTC', binance_account['balances'])
+        z_account.buying_power = float(y[0]['free'])
+        z_account.total_positions_value = self.get_position_value(binance_account['balances'])
+        return z_account
+
+    def get_position_value(self, balance):
+        value = 0
+        all_tickers = self._api.get_all_tickers()   # get pricing data for all pairs
+        for asset in balance:
+            # Calculate the position value in BTC?
+            if float(asset['free']) > 0.00000000:
+                if asset['asset'] != 'BTC':
+                    asset_pair = asset['asset'] + 'BTC'
+                    data = filter(lambda y: y['symbol'] == asset_pair, all_tickers)
+                    asset_value = float(asset['free']) * float(data['price'])
+                    value += asset_value
+                else:
+                    value += float(asset['free'])
+        return value
+
 
     @property
     def time_skew(self):
